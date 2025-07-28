@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Search, Clock, User, ArrowRightLeft, Filter } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { useEscrow } from '@/hooks/useEscrow';
 import {
   Select,
   SelectContent,
@@ -15,118 +17,56 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-interface MockEscrow {
-  id: string;
-  maker: string;
-  tokenA: { symbol: string; amount: string; logoURI: string };
-  tokenB: { symbol: string; amount: string; logoURI: string };
-  expiresAt: Date;
-  isMutable: boolean;
-  status: 'active' | 'expired' | 'taken';
-}
-
-// Mock data
-const MOCK_ESCROWS: MockEscrow[] = [
-  {
-    id: '1',
-    maker: 'Abc...xyz1',
-    tokenA: { symbol: 'SOL', amount: '10', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png' },
-    tokenB: { symbol: 'USDC', amount: '2500', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png' },
-    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-    isMutable: true,
-    status: 'active',
-  },
-  {
-    id: '2',
-    maker: 'Def...abc2',
-    tokenA: { symbol: 'USDC', amount: '1000', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png' },
-    tokenB: { symbol: 'SOL', amount: '4', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png' },
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    isMutable: false,
-    status: 'active',
-  },
-  {
-    id: '3',
-    maker: 'Ghi...def3',
-    tokenA: { symbol: 'USDT', amount: '5000', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg' },
-    tokenB: { symbol: 'SOL', amount: '20', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png' },
-    expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
-    isMutable: true,
-    status: 'active',
-  },
-];
 
 const Marketplace = () => {
   const { connected } = useWallet();
   const { toast } = useToast();
-  const [escrows, setEscrows] = useState<MockEscrow[]>(MOCK_ESCROWS);
+  const { marketplaceEscrows, takeEscrow, loading } = useEscrow();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('newest');
-  const [isLoading, setIsLoading] = useState(false);
 
-  const filteredEscrows = escrows
-    .filter(escrow => 
-      escrow.tokenA.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      escrow.tokenB.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      escrow.maker.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'expiring':
-          return a.expiresAt.getTime() - b.expiresAt.getTime();
-        case 'newest':
-        default:
-          return b.expiresAt.getTime() - a.expiresAt.getTime();
-      }
-    });
+  const filteredEscrows = useMemo(() => {
+    return marketplaceEscrows
+      .filter(escrow => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+          escrow.tokenA.toString().toLowerCase().includes(searchLower) ||
+          escrow.tokenB.toString().toLowerCase().includes(searchLower) ||
+          escrow.maker.toString().toLowerCase().includes(searchLower)
+        );
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'expiring':
+            return Number(a.expiresAt) - Number(b.expiresAt);
+          case 'newest':
+          default:
+            return Number(b.expiresAt) - Number(a.expiresAt);
+        }
+      });
+  }, [marketplaceEscrows, searchQuery, sortBy]);
 
-  const formatTimeRemaining = (expiresAt: Date) => {
-    const now = new Date();
-    const timeLeft = expiresAt.getTime() - now.getTime();
-    
-    if (timeLeft <= 0) return 'Expired';
-    
-    const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
-    if (days > 0) return `${days}d ${hours}h`;
-    return `${hours}h`;
+  const formatTimeRemaining = (expiresAt: bigint) => {
+    const now = Date.now();
+    const expirationTime = Number(expiresAt);
+    if (expirationTime <= now) return 'Expired';
+    return formatDistanceToNow(new Date(expirationTime), { addSuffix: false });
   };
 
-  const handleTakeEscrow = async (escrowId: string) => {
+  const handleTakeEscrow = async (escrow: any) => {
     if (!connected) {
       toast({
         title: "Wallet not connected",
-        description: "Please connect your wallet to take an escrow",
+        description: "Please connect your wallet to take this escrow",
         variant: "destructive",
       });
       return;
     }
 
-    setIsLoading(true);
     try {
-      // Simulate taking escrow
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Update escrow status
-      setEscrows(prev => prev.map(escrow => 
-        escrow.id === escrowId 
-          ? { ...escrow, status: 'taken' as const }
-          : escrow
-      ));
-      
-      toast({
-        title: "Escrow taken successfully!",
-        description: "The tokens have been exchanged",
-      });
+      await takeEscrow(escrow.escrowPda, escrow);
     } catch (error) {
-      toast({
-        title: "Failed to take escrow",
-        description: "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      console.error('Error taking escrow:', error);
     }
   };
 
@@ -156,39 +96,33 @@ const Marketplace = () => {
 
       <div className="grid gap-4">
         {filteredEscrows.map((escrow) => (
-          <Card key={escrow.id} className="glass-card hover:shadow-lg transition-all duration-200">
+          <Card key={escrow.escrowPda.toString()} className="glass-card hover:shadow-lg transition-all duration-200">
             <CardContent className="p-6">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="flex items-center space-x-6">
                   <div className="flex items-center space-x-3">
-                    <img 
-                      src={escrow.tokenA.logoURI} 
-                      alt={escrow.tokenA.symbol}
-                      className="w-10 h-10 rounded-full"
-                      onError={(e) => {
-                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${escrow.tokenA.symbol}&background=8b5cf6&color=fff&size=40`;
-                      }}
-                    />
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <span className="text-xs font-bold">A</span>
+                    </div>
                     <div>
-                      <div className="font-semibold text-lg">{escrow.tokenA.amount}</div>
-                      <div className="text-muted-foreground text-sm">{escrow.tokenA.symbol}</div>
+                      <div className="font-semibold text-lg">
+                        {(Number(escrow.amountA) / Math.pow(10, 9)).toFixed(2)}
+                      </div>
+                      <div className="text-muted-foreground text-sm">Token A</div>
                     </div>
                   </div>
 
                   <ArrowRightLeft className="w-5 h-5 text-muted-foreground" />
 
                   <div className="flex items-center space-x-3">
-                    <img 
-                      src={escrow.tokenB.logoURI} 
-                      alt={escrow.tokenB.symbol}
-                      className="w-10 h-10 rounded-full"
-                      onError={(e) => {
-                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${escrow.tokenB.symbol}&background=14b8a6&color=fff&size=40`;
-                      }}
-                    />
+                    <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center">
+                      <span className="text-xs font-bold">B</span>
+                    </div>
                     <div>
-                      <div className="font-semibold text-lg">{escrow.tokenB.amount}</div>
-                      <div className="text-muted-foreground text-sm">{escrow.tokenB.symbol}</div>
+                      <div className="font-semibold text-lg">
+                        {(Number(escrow.amountB) / Math.pow(10, 9)).toFixed(2)}
+                      </div>
+                      <div className="text-muted-foreground text-sm">Token B</div>
                     </div>
                   </div>
                 </div>
@@ -197,7 +131,7 @@ const Marketplace = () => {
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                     <div className="flex items-center space-x-1">
                       <User className="w-4 h-4" />
-                      <span>{escrow.maker}</span>
+                      <span>{escrow.maker.toString().slice(0, 6)}...{escrow.maker.toString().slice(-4)}</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <Clock className="w-4 h-4" />
@@ -211,11 +145,11 @@ const Marketplace = () => {
                   </div>
 
                   <Button
-                    onClick={() => handleTakeEscrow(escrow.id)}
-                    disabled={!connected || isLoading || escrow.status !== 'active'}
+                    onClick={() => handleTakeEscrow(escrow)}
+                    disabled={!connected || loading || escrow.status !== 'active'}
                     className="min-w-24"
                   >
-                    {isLoading ? 'Taking...' : 'Take'}
+                    {loading ? 'Taking...' : 'Take'}
                   </Button>
                 </div>
               </div>

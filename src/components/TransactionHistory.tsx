@@ -4,6 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { History, ExternalLink } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { useEscrow } from '@/hooks/useEscrow';
 
 interface Transaction {
   id: string;
@@ -48,6 +50,7 @@ const MOCK_TRANSACTIONS: Transaction[] = [
 
 const TransactionHistory = () => {
   const { connected } = useWallet();
+  const { transactions } = useEscrow();
 
   const getTypeColor = (type: string) => {
     switch (type) {

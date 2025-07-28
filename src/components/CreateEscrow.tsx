@@ -8,7 +8,9 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { ArrowDownUp, Clock, Settings } from 'lucide-react';
+import { PublicKey } from '@solana/web3.js';
 import TokenSelector from './TokenSelector';
+import { useEscrow } from '@/hooks/useEscrow';
 
 interface Token {
   address: string;
@@ -21,13 +23,13 @@ interface Token {
 const CreateEscrow = () => {
   const { connected } = useWallet();
   const { toast } = useToast();
+  const { createEscrow, loading } = useEscrow();
   const [tokenA, setTokenA] = useState<Token | null>(null);
   const [tokenB, setTokenB] = useState<Token | null>(null);
   const [amountA, setAmountA] = useState('');
   const [amountB, setAmountB] = useState('');
   const [expirationDays, setExpirationDays] = useState('7');
   const [isMutable, setIsMutable] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleCreateEscrow = async () => {
     if (!connected) {
@@ -48,30 +50,31 @@ const CreateEscrow = () => {
       return;
     }
 
-    setIsLoading(true);
     try {
-      // Simulate escrow creation
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      toast({
-        title: "Escrow created successfully!",
-        description: `Created escrow: ${amountA} ${tokenA.symbol} ⇄ ${amountB} ${tokenB.symbol}`,
+      const tokenAMint = new PublicKey(tokenA.address);
+      const tokenBMint = new PublicKey(tokenB.address);
+      const amountABigInt = BigInt(Math.floor(parseFloat(amountA) * Math.pow(10, tokenA.decimals)));
+      const amountBBigInt = BigInt(Math.floor(parseFloat(amountB) * Math.pow(10, tokenB.decimals)));
+
+      const success = await createEscrow({
+        tokenA: tokenAMint,
+        tokenB: tokenBMint,
+        amountA: amountABigInt,
+        amountB: amountBBigInt,
+        expirationDays: parseInt(expirationDays),
+        isMutable,
       });
 
-      // Reset form
-      setTokenA(null);
-      setTokenB(null);
-      setAmountA('');
-      setAmountB('');
-      setExpirationDays('7');
+      if (success) {
+        // Reset form
+        setTokenA(null);
+        setTokenB(null);
+        setAmountA('');
+        setAmountB('');
+        setExpirationDays('7');
+      }
     } catch (error) {
-      toast({
-        title: "Failed to create escrow",
-        description: "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      console.error('Error creating escrow:', error);
     }
   };
 
@@ -196,10 +199,10 @@ const CreateEscrow = () => {
 
           <Button
             onClick={handleCreateEscrow}
-            disabled={!connected || isLoading || !tokenA || !tokenB || !amountA || !amountB}
+            disabled={!connected || loading || !tokenA || !tokenB || !amountA || !amountB}
             className="w-full h-12 text-base"
           >
-            {isLoading ? 'Creating Escrow...' : 'Create Escrow'}
+            {loading ? 'Creating Escrow...' : 'Create Escrow'}
           </Button>
         </CardContent>
       </Card>

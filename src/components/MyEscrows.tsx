@@ -1,11 +1,13 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Settings, Trash2, Clock, ArrowRightLeft } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { useEscrow } from '@/hooks/useEscrow';
 
 interface MyEscrow {
   id: string;
@@ -39,8 +41,7 @@ const MOCK_USER_ESCROWS: MyEscrow[] = [
 const MyEscrows = () => {
   const { connected } = useWallet();
   const { toast } = useToast();
-  const [escrows, setEscrows] = useState<MyEscrow[]>(MOCK_USER_ESCROWS);
-  const [isLoading, setIsLoading] = useState(false);
+  const { userEscrows, cancelEscrow, loading } = useEscrow();
 
   const formatTimeRemaining = (expiresAt: Date) => {
     const now = new Date();
@@ -125,7 +126,7 @@ const MyEscrows = () => {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">My Escrows</h2>
         <Badge variant="outline" className="px-3 py-1">
-          {escrows.length} Total
+          {userEscrows.length} Total
         </Badge>
       </div>
 
