@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      buffer: "buffer",
     },
   },
   define: {
@@ -27,4 +26,14 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: ['buffer'],
   },
+  build: {
+    rollupOptions: {
+      external: [],
+      output: {
+        globals: {
+          buffer: 'Buffer'
+        }
+      }
+    }
+  }
 }));
