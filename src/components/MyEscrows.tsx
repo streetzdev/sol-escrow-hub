@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,41 +8,13 @@ import { Settings, Trash2, Clock, ArrowRightLeft } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useEscrow } from '@/hooks/useEscrow';
 
-interface MyEscrow {
-  id: string;
-  tokenA: { symbol: string; amount: string; logoURI: string };
-  tokenB: { symbol: string; amount: string; logoURI: string };
-  expiresAt: Date;
-  isMutable: boolean;
-  status: 'active' | 'expired' | 'taken';
-}
-
-// Mock data for user's escrows
-const MOCK_USER_ESCROWS: MyEscrow[] = [
-  {
-    id: '1',
-    tokenA: { symbol: 'SOL', amount: '5', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png' },
-    tokenB: { symbol: 'USDC', amount: '1250', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png' },
-    expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-    isMutable: true,
-    status: 'active',
-  },
-  {
-    id: '2',
-    tokenA: { symbol: 'USDT', amount: '2000', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg' },
-    tokenB: { symbol: 'SOL', amount: '8', logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png' },
-    expiresAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-    isMutable: false,
-    status: 'expired',
-  },
-];
-
 const MyEscrows = () => {
   const { connected } = useWallet();
   const { toast } = useToast();
   const { userEscrows, cancelEscrow, loading } = useEscrow();
 
-  const formatTimeRemaining = (expiresAt: Date) => {
+  const formatTimeRemaining = (expiresAtBigInt: bigint) => {
+    const expiresAt = new Date(Number(expiresAtBigInt));
     const now = new Date();
     const timeLeft = expiresAt.getTime() - now.getTime();
     
@@ -56,7 +27,31 @@ const MyEscrows = () => {
     return `${hours}h`;
   };
 
-  const handleCancelEscrow = async (escrowId: string) => {
+  const formatAmount = (amount: bigint) => {
+    // Convert from smallest unit to display unit (assuming 9 decimals for most tokens)
+    return (Number(amount) / 1e9).toFixed(4);
+  };
+
+  const getTokenSymbol = (tokenMint: string) => {
+    // Mock token symbols based on mint addresses
+    const tokenMap: { [key: string]: string } = {
+      'So11111111111111111111111111111111111111112': 'SOL',
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
+      'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 'USDT',
+    };
+    return tokenMap[tokenMint] || 'Unknown';
+  };
+
+  const getTokenLogo = (tokenMint: string) => {
+    const logoMap: { [key: string]: string } = {
+      'So11111111111111111111111111111111111111112': 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
+      'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg',
+    };
+    return logoMap[tokenMint] || `https://ui-avatars.com/api/?name=${getTokenSymbol(tokenMint)}&background=8b5cf6&color=fff&size=40`;
+  };
+
+  const handleCancelEscrow = async (escrowAccount: any) => {
     if (!connected) {
       toast({
         title: "Wallet not connected",
@@ -66,26 +61,10 @@ const MyEscrows = () => {
       return;
     }
 
-    setIsLoading(true);
     try {
-      // Simulate canceling escrow
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Remove escrow from list
-      setEscrows(prev => prev.filter(escrow => escrow.id !== escrowId));
-      
-      toast({
-        title: "Escrow canceled successfully!",
-        description: "Your tokens have been returned",
-      });
+      await cancelEscrow(escrowAccount.escrowPda, escrowAccount);
     } catch (error) {
-      toast({
-        title: "Failed to cancel escrow",
-        description: "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      console.error('Error canceling escrow:', error);
     }
   };
 
@@ -131,23 +110,23 @@ const MyEscrows = () => {
       </div>
 
       <div className="grid gap-4">
-        {escrows.map((escrow) => (
-          <Card key={escrow.id} className="glass-card">
+        {userEscrows.map((escrow, index) => (
+          <Card key={escrow.escrowPda.toString()} className="glass-card">
             <CardContent className="p-6">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="flex items-center space-x-6">
                   <div className="flex items-center space-x-3">
                     <img 
-                      src={escrow.tokenA.logoURI} 
-                      alt={escrow.tokenA.symbol}
+                      src={getTokenLogo(escrow.tokenA.toString())} 
+                      alt={getTokenSymbol(escrow.tokenA.toString())}
                       className="w-10 h-10 rounded-full"
                       onError={(e) => {
-                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${escrow.tokenA.symbol}&background=8b5cf6&color=fff&size=40`;
+                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${getTokenSymbol(escrow.tokenA.toString())}&background=8b5cf6&color=fff&size=40`;
                       }}
                     />
                     <div>
-                      <div className="font-semibold text-lg">{escrow.tokenA.amount}</div>
-                      <div className="text-muted-foreground text-sm">{escrow.tokenA.symbol}</div>
+                      <div className="font-semibold text-lg">{formatAmount(escrow.amountA)}</div>
+                      <div className="text-muted-foreground text-sm">{getTokenSymbol(escrow.tokenA.toString())}</div>
                     </div>
                   </div>
 
@@ -155,16 +134,16 @@ const MyEscrows = () => {
 
                   <div className="flex items-center space-x-3">
                     <img 
-                      src={escrow.tokenB.logoURI} 
-                      alt={escrow.tokenB.symbol}
+                      src={getTokenLogo(escrow.tokenB.toString())} 
+                      alt={getTokenSymbol(escrow.tokenB.toString())}
                       className="w-10 h-10 rounded-full"
                       onError={(e) => {
-                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${escrow.tokenB.symbol}&background=14b8a6&color=fff&size=40`;
+                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${getTokenSymbol(escrow.tokenB.toString())}&background=14b8a6&color=fff&size=40`;
                       }}
                     />
                     <div>
-                      <div className="font-semibold text-lg">{escrow.tokenB.amount}</div>
-                      <div className="text-muted-foreground text-sm">{escrow.tokenB.symbol}</div>
+                      <div className="font-semibold text-lg">{formatAmount(escrow.amountB)}</div>
+                      <div className="text-muted-foreground text-sm">{getTokenSymbol(escrow.tokenB.toString())}</div>
                     </div>
                   </div>
                 </div>
@@ -188,8 +167,8 @@ const MyEscrows = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleUpdateEscrow(escrow.id)}
-                        disabled={isLoading}
+                        onClick={() => handleUpdateEscrow(escrow.escrowPda.toString())}
+                        disabled={loading}
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
@@ -198,8 +177,8 @@ const MyEscrows = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleCancelEscrow(escrow.id)}
-                        disabled={isLoading}
+                        onClick={() => handleCancelEscrow(escrow)}
+                        disabled={loading}
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -212,7 +191,7 @@ const MyEscrows = () => {
           </Card>
         ))}
 
-        {escrows.length === 0 && (
+        {userEscrows.length === 0 && (
           <Card className="glass-card">
             <CardContent className="p-12 text-center">
               <div className="text-muted-foreground">
